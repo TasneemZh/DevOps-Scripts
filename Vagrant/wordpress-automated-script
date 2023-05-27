@@ -1,0 +1,67 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+Vagrant.configure("2") do |config|
+  # specify the box for the vm machine
+  config.vm.box = "centos/7"
+
+  # set a public ipv4 address for the vm machine 
+  config.vm.network "private_network", ip: "192.168.33.13"
+
+  # set a bridge network for the vm machine
+  config.vm.network "public_network"
+
+  # enable provisioning
+  config.vm.provision "shell", inline: <<-SHELL
+    # install Apache web server, mySQL database (MariaDB), PHP, PHP to work with the DB, PHP to work with WordPress, and the URLs installer
+    sudo yum install httpd mariadb-server php php-mysql php-gd wget -y
+    # start the Apache web server and MariaDB database
+    sudo systemctl start httpd mariadb
+    # enable the Apache web server and MariaDB database to start automatically when the system boots
+    sudo systemctl enable httpd.service mariadb.service
+    # install the Remi repository
+    sudo yum install http://rpms.remirepo.net/enterprise/remi-release-7.rpm -y
+    # enable the Remi repository globally
+    sudo sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/remi.repo
+    # make sure that the [remi] section has enabled=1
+    sudo sed -i '/\[remi\]/,/^\[/ s/enabled=0/enabled=1/' /etc/yum.repos.d/remi.repo
+    # make sure that the [remi-php56] section has enabled=1
+    sudo sed -i '/\[remi-php56\]/,/^\[/ s/enabled=0/enabled=1/' /etc/yum.repos.d/remi.repo
+    # upgrade PHP to work with WordPress version
+    sudo yum -y upgrade php*
+    # log into the database by the root account
+    mysql -u root --skip-password
+    # create a new database
+    CREATE DATABASE wordpress;
+    # create a user account to operate exclusively on the database
+    CREATE USER myDB_user@localhost IDENTIFIED BY '123456';
+    # provide the user with all the privilages for the WordPress database
+    GRANT ALL PRIVILEGES ON wordpress.* TO myDB_user@localhost IDENTIFIED BY '123456';
+    # apply the recent privilages changes to the database
+    FLUSH PRIVILEGES;
+    # exit from the database
+    exit
+    # install WordPress
+    wget http://wordpress.org/latest.tar.gz
+    # extract the archived file
+    tar xzvf latest.tar.gz
+    # transfer the unpacked files to Apache's document root to be served
+    sudo rsync -avP ~/wordpress/ /var/www/html/
+    # create a folder for WordPress to store uploaded files
+    mkdir /var/www/html/wp-content/uploads
+    # grant ownership to Apache's user and group to WordPress files and folders
+    sudo chown -R apache:apache /var/www/html/*
+    # move to Apache web server
+    cd /var/www/html
+    # copy the content of the sample settings to WordPress main config file
+    cp wp-config-sample.php wp-config.php
+    # change the value of DB_NAME to "wordpress"
+    sudo sed -i "s/define( *'DB_NAME', *'database_name_here' *);/define('DB_NAME', 'wordpress');/" wp-config.php
+    # change the value of DB_USER to "myDB_user"
+    sudo sed -i "s/define( *'DB_USER', *'username_here' *);/define('DB_USER', 'myDB_user');/" wp-config.php
+    # change the value of DB_PASSWORD to "123456"
+    sudo sed -i "s/define( *'DB_PASSWORD', *'password_here' *);/define('DB_PASSWORD', '123456');/" wp-config.php
+    # reload the web server for changes to take effect
+    sudo systemctl reload httpd
+  SHELL
+end
