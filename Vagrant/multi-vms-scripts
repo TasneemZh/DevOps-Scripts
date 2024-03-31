@@ -1,0 +1,165 @@
+Vagrant.configure("2") do |config|
+  config.vm.provision "shell", inline: "Welcome to this humble VM"
+
+  config.vm.define "users" do |users|
+    users.vm.box = "centos/7"
+    users.vm.network "private_network", ip: "192.168.30.10"
+    users.vm.network "public_network"
+    users.vm.provision "shell", inline: <<-SHELL
+      # check the current time
+      uptime
+      # check memory details
+      free -m
+      # create a new user
+      sudo adduser test_user_1
+      # list the user details
+      id test_user_1
+      # create a group for the new user
+      sudo addgroup test_group_1
+      # add the new user to the new group
+      usermod -aG test_group_1 test_user_1
+      # confirm new user details
+      id test_user_1
+      # list group members
+      getent group test_user_1
+      # delete the new user default group
+      sudo delgroup test_user_1
+      # list new group members
+      getent group test_group_1
+      # create a new folder in the temp directory in the root directory of the machine
+      sudo mkdir /tmp/secrets
+      # create five text files with suffix number that start from 1 and continue till 5
+      sudo touch credentials[1..5].txt
+      # move the new files to the new folder
+      sudo mv credentials[1..5].txt /tmp/secrets
+      # set the user and group ownership of the file
+      sudo chown -R test_user_1:test_group_1 /tmp/secrets
+      # set full permissions to the owner, read/execute permissions to the group members, and no permission to everybody else
+      sudo chmod 750 /tmp/secrets
+      # move to the new directory
+      sudo cd /tmp/secrets
+      # exclude one of the files to have different permissions set in a different way of providing the owner full access
+      sudo chmod u+rwx credentials3.txt
+      # remove the access of the group members
+      sudo chmod g-rx credentials3.txt
+      # set read permission to everyone else
+      sudo chmod o+r credentials3.txt
+      # set another file permissions in a different way
+      sudo chmod -rwx--xr-- credentials5.txt
+      # step back of the secrets folder to be in the tmp directory
+      sudo cd ..
+      # jump to the home directory
+      sudo cd ~
+      # switch to the owner
+      su - test_user_1
+      # confirm they can write
+      echo "Welcome, everyone!" >> /tmp/secrets/credentials2.txt
+      # confirm they can read
+      cat /tmp/secrets/credentials2.txt
+      # confirm they can execute
+      ls -ld /tmp/secrets
+      # return back to the previous account
+      logout
+      # create a new account
+      sudo adduser other_user
+      # delete the user default group
+      sudo delgroup other_user
+      # switch to the plain user
+      su - other_user
+      # confirm the user is unable to read any content in the directory
+      cat /tmp/secrets/credentials1.txt
+      # confirm the user is unable to execute the directory
+      tree /tmp/secrets
+      # confirm the user is unable to write to the directory
+      touch /tmp/secrets/new_member.txt
+      # return back to the previous account
+      exit
+      # add the user to the privileged group
+      usermod -aG test_group_1 other_user
+      # switch back to the plain user
+      su - other_user
+      # confirm the group member is able to execute the directory
+      ls -r /tmp/secrets
+      # confirm the group member is able to read from the directory by searching for a term in a file
+      grep "everyone" /tmp/secrets/credentials2.txt
+      # return back to the previous account
+      logout
+      # remove the user from the group
+      sudo deluser other_user test_group_1
+      # check user is now added to default group as that was its primary one
+      id other_user
+      # delete the folder with its content as part of the cleanup process
+      sudo rm -r /tmp/secrets
+      # delete the created group
+      sudo delgroup test_group_1
+      # delete the created user
+      sudo deluser other_user        
+      # delete the created user
+      sudo deluser test_user_1
+    SHELL
+  end
+
+  config.vm.define "mysql" do |mysql|
+    mysql.vm.box = "centos/7"
+    mysql.vm.network "private_network", ip: "192.168.25.11"
+    mysql.vm.network "public_network"
+    mysql.vm.provision "shell", inline: <<-SHELL
+      sudo yum install mariadb-server -y
+      sudo systemctl start mariadb
+      sudo systemctl status mariadb
+      sudo systemctl is-enabled mariadb
+      sudo systemctl enable mariadb.service
+      mysql -h localhost -u root --skip-password
+      SHOW DATABASES;
+      CREATE DATABASE garden;
+      USE garden;
+      CREATE TABLE statuses (
+        name char(50),
+        health enum('excellent', 'good', 'healthy', 'average', 'poor'),
+        fullest tinyint,
+        has_flowers bool,
+        has_fruites bool,
+        has_grass bool,
+        colors set('1', '2', '3', '4', '5', '6', '7', '8'),
+        age tinyint,
+        last_harvest date,
+        last_water date,
+        last_sprayed date
+      );
+      SHOW TABLES;
+      INSERT INTO statuses VALUES ('stars', 'excellent', 47 , 1, 0, 1, '1,2,3', 4, '2023-08-12', '2023-06-05', '2023-04-02');
+      INSERT INTO statuses (last_harvest) values ('2022-09-20');
+      SELECT * FROM statuses;
+      DELETE FROM statuses WHERE last_harvest='2022-09-20';
+      INSERT INTO statuses VALUES ('dream', 'good', 56, 0, 1, 1, '2,4,5,6', 5, '2022-09-19', '2023-06-06', '2023-02-07');
+      INSERT INTO statuses VALUES ('pinky', 'healthy', 77, 0, 0, 1, '7,1,5,3', 8, '2023-01-23', '2023-06-07', '2023-02-09');
+      INSERT INTO statuses VALUES ('lizard', 'average', 87, 0, 1, 0, '8,6,4,1,5', 12, '2022-07-09', '2023-06-08', '2023-02-01');
+      INSERT INTO statuses VALUES ('night', 'poor', 81, 1, 1, 1, '1,2', 3, '2021-03-04', '2023-06-09', '2023-06-06');
+      CREATE TABLE colors (
+        id tinyint,
+        value char(50)
+      );
+      INSERT INTO colors (id, value) VALUES
+        (1, 'red'),
+        (2, 'green'),
+        (3, 'blue'),
+        (4, 'yellow'),
+        (5, 'white'),
+        (6, 'grey'),
+        (7, 'purple'),
+        (8, 'black');
+      SELECT * FROM colors;
+      CREATE USER myDB_user@localhost;
+      GRANT SELECT ON statuses TO 'myDB_user'@'localhost';
+      FLUSH PRIVILEGES;
+      exit
+      mysql -h localhost -u myDB_user --skip-password
+      SELECT * FROM garden.statuses;
+      exit
+      mysql -h localhost -u root --skip-password
+      DROP USER 'myDB_user'@'localhost';
+      DROP DATABASE garden;
+      exit
+    SHELL
+  end
+end
